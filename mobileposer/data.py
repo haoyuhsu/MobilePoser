@@ -61,66 +61,80 @@ class PoseDataset(Dataset):
         return data
 
     def _process_file_data(self, file_data, data):
+        """Process file data without combo expansion."""
         accs, oris, poses, trans = file_data['acc'], file_data['ori'], file_data['pose'], file_data['tran']
         joints = file_data.get('joint', [None] * len(poses))
         foots = file_data.get('contact', [None] * len(poses))
         fnames = file_data.get('fname', [f"sample_{i}" for i in range(len(poses))])
 
         for acc, ori, pose, tran, joint, foot, fname in zip(accs, oris, poses, trans, joints, foots, fnames):
-            acc, ori = acc[:, :5]/amass.acc_scale, ori[:, :5]
-            pose_global, joint = self.bodymodel.forward_kinematics(pose=pose.view(-1, 216)) # convert local rotation to global
-            pose = pose if self.evaluate else pose_global.view(-1, 24, 3, 3)                # use global only for training
-            joint = joint.view(-1, 24, 3)
-            self._process_combo_data(acc, ori, pose, joint, tran, foot, fname, data)
-
-    def _process_combo_data(self, acc, ori, pose, joint, tran, foot, fname, data):
-        for combo_name, c in self.combos:
-            # mask out layers for different subsets
-            combo_acc = torch.zeros_like(acc)
-            combo_ori = torch.zeros_like(ori)
-            combo_acc[:, c] = acc[:, c]
-            combo_ori[:, c] = ori[:, c]
-            imu_input = torch.cat([combo_acc.flatten(1), combo_ori.flatten(1)], dim=1) # [[N, 15], [N, 45]] => [N, 60] 
-
-            data_len = len(imu_input) if self.evaluate else datasets.window_length
+            # Normalize acc and ori
+            acc, ori = acc[:, :5] / amass.acc_scale, ori[:, :5]
             
-            for key, value in zip(['imu_inputs', 'pose_outputs', 'joint_outputs', 'tran_outputs'],
-                                [imu_input, pose, joint, tran]):
-                data[key].extend(torch.split(value, data_len))
+            # Convert pose to global rotation
+            pose_global, joint = self.bodymodel.forward_kinematics(pose=pose.view(-1, 216))
+            pose = pose if self.evaluate else pose_global.view(-1, 24, 3, 3)
+            joint = joint.view(-1, 24, 3)
+            
+            # Split data into windows
+            data_len = len(acc) if self.evaluate else datasets.window_length
+            
+            # Store raw acc and ori (not combo-masked yet)
+            data['acc'].extend(torch.split(acc, data_len))
+            data['ori'].extend(torch.split(ori, data_len))
+            data['pose_outputs'].extend(torch.split(pose, data_len))
+            data['joint_outputs'].extend(torch.split(joint, data_len))
+            data['tran_outputs'].extend(torch.split(tran, data_len))
+            data['fnames'].extend([fname] * len(torch.split(acc, data_len)))
+            
+            # Process translation data if needed
+            if not (self.evaluate or self.finetune):
+                root_vel = torch.cat((torch.zeros(1, 3), tran[1:] - tran[:-1]))
+                vel = torch.cat((torch.zeros(1, 24, 3), torch.diff(joint, dim=0)))
+                vel[:, 0] = root_vel
+                data['vel_outputs'].extend(torch.split(vel * (datasets.fps / amass.vel_scale), data_len))
+                data['foot_outputs'].extend(torch.split(foot, data_len))
 
-            # ADD combo name to fname - replicate for each split
-            splits = torch.split(imu_input, data_len)
-            full_fname = f"{combo_name}/{fname}"
-            data['fnames'].extend([full_fname] * len(splits))
-
-            if not (self.evaluate or self.finetune): # do not finetune translation module
-                self._process_translation_data(joint, tran, foot, data_len, data)
-
-    def _process_translation_data(self, joint, tran, foot, data_len, data):
-        root_vel = torch.cat((torch.zeros(1, 3), tran[1:] - tran[:-1]))
-        vel = torch.cat((torch.zeros(1, 24, 3), torch.diff(joint, dim=0)))
-        vel[:, 0] = root_vel
-        data['vel_outputs'].extend(torch.split(vel * (datasets.fps / amass.vel_scale), data_len))
-        data['foot_outputs'].extend(torch.split(foot, data_len))
+    def _apply_combo_mask(self, acc, ori, combo_indices):
+        """Apply combo mask to acceleration and orientation data."""
+        combo_acc = torch.zeros_like(acc)
+        combo_ori = torch.zeros_like(ori)
+        combo_acc[:, combo_indices] = acc[:, combo_indices]
+        combo_ori[:, combo_indices] = ori[:, combo_indices]
+        imu_input = torch.cat([combo_acc.flatten(1), combo_ori.flatten(1)], dim=1)  # [N, 60]
+        return imu_input
 
     def __getitem__(self, idx):
-        imu = self.data['imu_inputs'][idx].float()
+        # Sample a random combo at runtime
+        combo_name, combo_indices = random.choice(self.combos)
+        
+        # Get raw data
+        acc = self.data['acc'][idx].float()
+        ori = self.data['ori'][idx].float()
         joint = self.data['joint_outputs'][idx].float()
         tran = self.data['tran_outputs'][idx].float()
-        fname = self.data['fnames'][idx]  # ADD fname retrieval
+        fname = self.data['fnames'][idx]
+        
+        # Apply combo mask
+        imu = self._apply_combo_mask(acc, ori, combo_indices)
+        
+        # Prepare full filename with combo
+        full_fname = f"{combo_name}/{fname}"
+        
+        # Prepare pose output
         num_pred_joints = len(amass.pred_joints_set)
         pose = art.math.rotation_matrix_to_r6d(self.data['pose_outputs'][idx]).reshape(-1, num_pred_joints, 6)[:, amass.pred_joints_set].reshape(-1, 6*num_pred_joints)
 
         if self.evaluate or self.finetune:
-            return imu, pose, joint, tran, fname  # ADD fname to return
+            return imu, pose, joint, tran, full_fname
 
         vel = self.data['vel_outputs'][idx].float()
         contact = self.data['foot_outputs'][idx].float()
 
-        return imu, pose, joint, tran, vel, contact, fname  # ADD fname to return
+        return imu, pose, joint, tran, vel, contact, full_fname
 
     def __len__(self):
-        return len(self.data['imu_inputs'])
+        return len(self.data['acc'])
 
 
 def pad_seq(batch):
