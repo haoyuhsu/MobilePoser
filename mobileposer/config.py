@@ -57,20 +57,49 @@ class model_config:
 class amass:
     """AMASS dataset information."""
     # device-location combinationsa
+    ### IMUPoser config ###
     combos = {
+        'global': [0, 1, 2, 3, 4],
+        'lw_rw_h': [0, 1, 4],
+        'rw_lp_rp': [1, 2, 3],
+        'lw_rw_rp': [0, 1, 3],
         'lw_rp_h': [0, 3, 4],
         'rw_rp_h': [1, 3, 4],
+        'lw_lp_rp': [0, 2, 3],
+        'lw_rw_lp': [0, 1, 2],
         'lw_lp_h': [0, 2, 4],
         'rw_lp_h': [1, 2, 4],
+        'lw_rw': [0, 1],
         'lw_lp': [0, 2],
         'lw_rp': [0, 3],
+        'lw_h': [0, 4],
         'rw_lp': [1, 2],
         'rw_rp': [1, 3],
+        'rw_h': [1, 4],
+        'lp_rp': [2, 3],
         'lp_h': [2, 4],
         'rp_h': [3, 4],
+        'lw': [0],
+        'rw': [1],
         'lp': [2],
         'rp': [3],
-     }
+        'h': [4]
+    }
+    ### MobilePoser config ###
+    # combos = {
+    #     'lw_rp_h': [0, 3, 4],
+    #     'rw_rp_h': [1, 3, 4],
+    #     'lw_lp_h': [0, 2, 4],
+    #     'rw_lp_h': [1, 2, 4],
+    #     'lw_lp': [0, 2],
+    #     'lw_rp': [0, 3],
+    #     'rw_lp': [1, 2],
+    #     'rw_rp': [1, 3],
+    #     'lp_h': [2, 4],
+    #     'rp_h': [3, 4],
+    #     'lp': [2],
+    #     'rp': [3],
+    # }
     acc_scale = 30
     vel_scale = 2
 
@@ -100,17 +129,33 @@ class datasets:
     imuposer_train = "imuposer_train.pt"
     imuposer_test = "imuposer_test.pt"
 
+    # Lingo dataset
+    lingo_train = "lingo_train.pt"
+    lingo_test = "lingo_test.pt"
+
+    # HumanML dataset
+    humanml_train = "humanml_train.pt"
+    humanml_test = "humanml_test.pt"
+
     # Test datasets
     test_datasets = {
         'dip': dip_test,
         'totalcapture': totalcapture,
-        'imuposer': imuposer_test
+        'imuposer': imuposer_test,
+        'lingo': lingo_test,
+        'humanml': humanml_test
     }
 
     # Finetune datasets
     finetune_datasets = {
         'dip': dip_train,
         'imuposer': imuposer_train
+    }
+
+    # Training datasets (for normal training)
+    train_datasets = {
+        'lingo': lingo_train,
+        'humanml': humanml_train
     }
 
     # AMASS datasets (add more as they become available in AMASS!)

@@ -16,13 +16,14 @@ from mobileposer.helpers import *
 
 
 class PoseDataset(Dataset):
-    def __init__(self, fold: str='train', evaluate: str=None, finetune: str=None):
+    def __init__(self, fold: str='train', evaluate: str=None, finetune: str=None, dataset_source: str='lingo'):
         super().__init__()
         self.fold = fold
         self.evaluate = evaluate
         self.finetune = finetune
+        self.dataset_source = dataset_source
         self.bodymodel = art.model.ParametricModel(paths.smpl_file)
-        self.combos = list(amass.combos.items())
+        self.combos = list(amass.combos.items())   # use IMUPoser combos
         self.data = self._prepare_dataset()
 
     def _get_data_files(self, data_folder):
@@ -37,15 +38,20 @@ class PoseDataset(Dataset):
         if self.finetune:
             return [datasets.finetune_datasets[self.finetune]]
         else:
-            return [x.name for x in data_folder.iterdir() if not x.is_dir()]
+            if self.dataset_source in datasets.train_datasets:
+                return [datasets.train_datasets[self.dataset_source]]
+            else:
+                # Fallback to loading all files in the folder
+                return [x.name for x in data_folder.iterdir() if not x.is_dir()]
 
     def _get_test_files(self):
-        return [datasets.test_datasets[self.evaluate]]
+        test_key = self.evaluate if self.evaluate else self.dataset_source
+        return [datasets.test_datasets[test_key]]
 
     def _prepare_dataset(self):
         data_folder = paths.processed_datasets / ('eval' if (self.finetune or self.evaluate) else '')
         data_files = self._get_data_files(data_folder)
-        data = {key: [] for key in ['imu_inputs', 'pose_outputs', 'joint_outputs', 'tran_outputs', 'vel_outputs', 'foot_outputs', 'fnames']}  # ADD 'fnames'
+        data = {key: [] for key in ['imu_inputs', 'pose_outputs', 'joint_outputs', 'tran_outputs', 'vel_outputs', 'foot_outputs', 'fnames']}
         for data_file in tqdm(data_files):
             try:
                 file_data = torch.load(data_folder / data_file)
@@ -58,16 +64,16 @@ class PoseDataset(Dataset):
         accs, oris, poses, trans = file_data['acc'], file_data['ori'], file_data['pose'], file_data['tran']
         joints = file_data.get('joint', [None] * len(poses))
         foots = file_data.get('contact', [None] * len(poses))
-        fnames = file_data.get('fname', [f"sample_{i}" for i in range(len(poses))])  # ADD default fnames if missing
+        fnames = file_data.get('fname', [f"sample_{i}" for i in range(len(poses))])
 
-        for acc, ori, pose, tran, joint, foot, fname in zip(accs, oris, poses, trans, joints, foots, fnames):  # ADD fname to zip
+        for acc, ori, pose, tran, joint, foot, fname in zip(accs, oris, poses, trans, joints, foots, fnames):
             acc, ori = acc[:, :5]/amass.acc_scale, ori[:, :5]
             pose_global, joint = self.bodymodel.forward_kinematics(pose=pose.view(-1, 216)) # convert local rotation to global
             pose = pose if self.evaluate else pose_global.view(-1, 24, 3, 3)                # use global only for training
             joint = joint.view(-1, 24, 3)
-            self._process_combo_data(acc, ori, pose, joint, tran, foot, fname, data)  # PASS fname
+            self._process_combo_data(acc, ori, pose, joint, tran, foot, fname, data)
 
-    def _process_combo_data(self, acc, ori, pose, joint, tran, foot, fname, data):  # ADD fname parameter
+    def _process_combo_data(self, acc, ori, pose, joint, tran, foot, fname, data):
         for combo_name, c in self.combos:
             # mask out layers for different subsets
             combo_acc = torch.zeros_like(acc)
@@ -84,7 +90,7 @@ class PoseDataset(Dataset):
 
             # ADD combo name to fname - replicate for each split
             splits = torch.split(imu_input, data_len)
-            full_fname = f"{combo_name}/{fname}"  # CHANGED: prepend combo name
+            full_fname = f"{combo_name}/{fname}"
             data['fnames'].extend([full_fname] * len(splits))
 
             if not (self.evaluate or self.finetune): # do not finetune translation module
@@ -115,6 +121,7 @@ class PoseDataset(Dataset):
 
     def __len__(self):
         return len(self.data['imu_inputs'])
+
 
 def pad_seq(batch):
     """Pad sequences to same length for RNN."""
@@ -147,19 +154,20 @@ def pad_seq(batch):
 
 
 class PoseDataModule(L.LightningDataModule):
-    def __init__(self, finetune: str = None):
+    def __init__(self, finetune: str = None, dataset_source: str = 'lingo'):
         super().__init__()
         self.finetune = finetune
+        self.dataset_source = dataset_source
         self.hypers = finetune_hypers if self.finetune else train_hypers
 
     def setup(self, stage: str):
         if stage == 'fit':
-            dataset = PoseDataset(fold='train', finetune=self.finetune)
+            dataset = PoseDataset(fold='train', finetune=self.finetune, dataset_source=self.dataset_source)
             train_size = int(0.9 * len(dataset))
             val_size = len(dataset) - train_size
             self.train_dataset, self.val_dataset = random_split(dataset, [train_size, val_size])
         elif stage == 'test':
-            self.test_dataset = PoseDataset(fold='test', finetune=self.finetune)
+            self.test_dataset = PoseDataset(fold='test', finetune=self.finetune, dataset_source=self.dataset_source)
 
     def _dataloader(self, dataset):
         return DataLoader(
