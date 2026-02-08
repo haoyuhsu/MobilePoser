@@ -141,7 +141,7 @@ def process_totalcapture():
     tc_poses = {pose.shape[0]: pose for pose in amass_tc}
 
     processed, failed_to_process = [], []
-    accs, oris, poses, trans = [], [], [], []
+    accs, oris, poses, trans, fnames = [], [], [], [], []
     for file in sorted(os.listdir(paths.calibrated_totalcapture)):
         if not file.endswith(".pkl") or ('s5' in file and 'acting3' in file) or not any(file.startswith(s.lower()) for s in subjects):
             continue
@@ -177,6 +177,7 @@ def process_totalcapture():
         accs.append(acc)    # N, 6, 3
         oris.append(ori)    # N, 6, 3, 3
         poses.append(pose)  # N, 24, 3, 3
+        fnames.append(file.replace('.pkl', ''))  # ADD filename tracking
 
         processed.append(file)
     
@@ -217,7 +218,8 @@ def process_totalcapture():
         'acc': accs,
         'ori': oris,
         'pose': poses,
-        'tran': trans
+        'tran': trans,
+        'fname': fnames  # ADD filename list
     }
     data_path = paths.eval_dir / "totalcapture.pt"
     torch.save(data, data_path)
@@ -239,7 +241,7 @@ def process_dipimu(split="test"):
     # enable downsampling
     step = max(1, round(60 / TARGET_FPS))
 
-    accs, oris, poses, trans, shapes, joints = [], [], [], [], [], []
+    accs, oris, poses, trans, shapes, joints, fnames = [], [], [], [], [], [], []  # ADD fnames
     for subject_name in subjects:
         for motion_name in os.listdir(os.path.join(paths.raw_dip, subject_name)):
             try:
@@ -275,6 +277,7 @@ def process_dipimu(split="test"):
                     grot, joint, vert = body_model.forward_kinematics(p, shape, tran, calc_mesh=True)
                     poses.append(p.clone())
                     joints.append(joint)
+                    fnames.append(f"{subject_name}_{motion_name.replace('.pkl', '')}")  # ADD filename tracking
                 else:
                     print(f"DIP-IMU: {subject_name}/{motion_name} has too much nan! Discard!")
             except Exception as e:
@@ -289,6 +292,7 @@ def process_dipimu(split="test"):
         'tran': trans,
         'acc': accs,
         'ori': oris,
+        'fname': fnames  # ADD filename list
     }
     data_path = paths.eval_dir / f"dip_{split}.pt"
     torch.save(data, data_path)
@@ -302,7 +306,7 @@ def process_imuposer(split: str="train"):
     test_split = ['P9', 'P10']
     subjects = train_split if split == "train" else test_split
 
-    accs, oris, poses, trans = [], [], [], []
+    accs, oris, poses, trans, fnames = [], [], [], [], []  # ADD fnames
     for pid_path in sorted(paths.raw_imuposer.iterdir()):
         if pid_path.name not in subjects:
             continue
@@ -317,10 +321,14 @@ def process_imuposer(split: str="train"):
                 pose = math.axis_angle_to_rotation_matrix(fdata['pose']).view(-1, 24, 3, 3)
                 tran = fdata['trans'].to(torch.float32)
                 
-                 # align IMUPoser global fame with DIP
+                # align IMUPoser global fame with DIP
                 rot = torch.tensor([[[-1, 0, 0], [0, 0, 1], [0, 1, 0.]]])
                 pose[:, 0] = rot.matmul(pose[:, 0])
                 tran = tran.matmul(rot.squeeze())
+
+                # TODO: test whether to transform the IMU data as well (this hurts the pretrained model performance, not sure how it will affect our models)
+                # acc = torch.einsum('ij,nkj->nki', rot.squeeze(), acc)
+                # ori = torch.einsum('ij,nkjl->nkil', rot.squeeze(), ori)
 
                 # ensure sizes are consistent
                 assert tran.shape[0] == pose.shape[0]
@@ -329,13 +337,15 @@ def process_imuposer(split: str="train"):
                 oris.append(ori)    # N, 5, 3, 3
                 poses.append(pose)  # N, 24, 3, 3
                 trans.append(tran)  # N, 3
+                fnames.append(f"{pid_path.name}_{fpath.stem}")  # ADD filename tracking
 
     print(f"# Data Processed: {len(accs)}")
     data = {
         'acc': accs,
         'ori': oris,
         'pose': poses,
-        'tran': trans
+        'tran': trans,
+        'fname': fnames  # ADD filename list
     }
     data_path = paths.eval_dir / f"imuposer_{split}.pt"
     torch.save(data, data_path)

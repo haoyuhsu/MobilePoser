@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from argparse import ArgumentParser
 import tqdm 
+import pickle
 
 from mobileposer.config import *
 from mobileposer.helpers import * 
@@ -37,12 +38,12 @@ class PoseEvaluator:
 
 
 @torch.no_grad()
-def evaluate_pose(model, dataset, num_past_frame=20, num_future_frame=5, evaluate_tran=False):
+def evaluate_pose(model, dataset, num_past_frame=20, num_future_frame=5, evaluate_tran=False, output_dir=None):
     # specify device
     device = model_config.device
 
-    # load data
-    xs, ys = zip(*[(imu.to(device), (pose.to(device), tran)) for imu, pose, joint, tran in dataset])
+    # load data - UPDATE to extract fname
+    xs, ys, fnames = zip(*[(imu.to(device), (pose.to(device), tran), fname) for imu, pose, joint, tran, fname in dataset])
 
     # setup Pose Evaluator
     evaluator = PoseEvaluator()
@@ -53,15 +54,65 @@ def evaluate_pose(model, dataset, num_past_frame=20, num_future_frame=5, evaluat
     
     model.eval()
     with torch.no_grad():
-        for x, y in tqdm.tqdm(list(zip(xs, ys))):
+        for idx, (x, y, fname) in enumerate(tqdm.tqdm(list(zip(xs, ys, fnames)))):  # ADD fname
             model.reset()
             pose_p_offline, joint_p_offline, tran_p_offline, _ = model.forward_offline(x.unsqueeze(0), [x.shape[0]])
             pose_t, tran_t = y
-            pose_t = art.math.r6d_to_rotation_matrix(pose_t)
+            pose_t_rotmat = art.math.r6d_to_rotation_matrix(pose_t)
+
+            pose_t_rotmat = pose_t_rotmat.view(-1, 24, 3, 3)
 
             if getenv("ONLINE"):
                 online_results = [model.forward_online(f) for f in torch.cat((x, x[-1].repeat(num_future_frame, 1)))]
                 pose_p_online, joint_p_online, tran_p_online, _ = [torch.stack(_)[num_future_frame:] for _ in zip(*online_results)]
+
+            ################################################################
+            # TODO: Save predictions and ground truth in SMPL format
+            ################################################################
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Convert predicted rotation matrices to axis-angle
+            pose_p_aa = art.math.rotation_matrix_to_axis_angle(pose_p_offline).reshape(-1, 24, 3)
+            
+            # Extract predicted global_orient (root) and body_pose (joints 1-23)
+            pred_global_orient = pose_p_aa[:, 0, :].cpu().numpy()  # (N, 3)
+            pred_body_pose = pose_p_aa[:, 1:24, :].cpu().numpy()   # (N, 23, 3)
+            pred_body_pose = pred_body_pose.reshape(-1, 69)         # (N, 69) - 23 joints * 3
+            pred_transl = tran_p_offline.cpu().numpy()              # (N, 3)
+            
+            # Convert ground truth rotation matrices to axis-angle
+            pose_t_aa = art.math.rotation_matrix_to_axis_angle(pose_t_rotmat).reshape(-1, 24, 3)
+            
+            # Extract ground truth global_orient and body_pose
+            gt_global_orient = pose_t_aa[:, 0, :].cpu().numpy()    # (N, 3)
+            gt_body_pose = pose_t_aa[:, 1:24, :].cpu().numpy()     # (N, 23, 3)
+            gt_body_pose = gt_body_pose.reshape(-1, 69)             # (N, 69) - 23 joints * 3
+            gt_transl = tran_t.cpu().numpy() if isinstance(tran_t, torch.Tensor) else tran_t  # (N, 3)
+            
+            # Create data dictionary with both GT and predictions
+            data_dict = {
+                'gt': {
+                    'global_orient': gt_global_orient,
+                    'body_pose': gt_body_pose,
+                    'transl': gt_transl,
+                },
+                'recon': {
+                    'global_orient': pred_global_orient,
+                    'body_pose': pred_body_pose,
+                    'transl': pred_transl,
+                }
+            }
+            
+            # Save to pickle file using fname instead of idx
+            sample_name = f"{fname}.pkl"  # USE fname instead of idx
+            save_path = os.path.join(output_dir, sample_name)
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)  # CREATE subfolder if needed
+            with open(save_path, 'wb') as f:
+                pickle.dump(data_dict, f)
+
+            pose_t_rotmat = pose_t_rotmat.view(-1, 24*3*3)
+            ################################################################
+
 
             if evaluate_tran:
                 # compute gt move distance at every frame 
@@ -91,9 +142,9 @@ def evaluate_pose(model, dataset, num_past_frame=20, num_future_frame=5, evaluat
                     if len(errs) > 0:
                         tran_errors[window_size].append(sum(errs) / len(errs))
 
-            offline_errs.append(evaluator.eval(pose_p_offline, pose_t, tran_p=tran_p_offline, tran_t=tran_t))
+            offline_errs.append(evaluator.eval(pose_p_offline, pose_t_rotmat, tran_p=tran_p_offline, tran_t=tran_t))
             if getenv("ONLINE"):
-                online_errs.append(evaluator.eval(pose_p_online, pose_t, tran_p=tran_p_online, tran_t=tran_t))
+                online_errs.append(evaluator.eval(pose_p_online, pose_t_rotmat, tran_p=tran_p_online, tran_t=tran_t))
 
     # print joint errors
     print('============== offline ================')
@@ -123,4 +174,4 @@ if __name__ == '__main__':
 
     # evaluate pose
     print(f"Starting evaluation: {args.dataset.capitalize()}")
-    evaluate_pose(model, dataset)
+    evaluate_pose(model, dataset, output_dir=os.path.join('./predictions', args.dataset))

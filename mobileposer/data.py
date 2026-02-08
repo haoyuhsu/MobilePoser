@@ -45,7 +45,7 @@ class PoseDataset(Dataset):
     def _prepare_dataset(self):
         data_folder = paths.processed_datasets / ('eval' if (self.finetune or self.evaluate) else '')
         data_files = self._get_data_files(data_folder)
-        data = {key: [] for key in ['imu_inputs', 'pose_outputs', 'joint_outputs', 'tran_outputs', 'vel_outputs', 'foot_outputs']}
+        data = {key: [] for key in ['imu_inputs', 'pose_outputs', 'joint_outputs', 'tran_outputs', 'vel_outputs', 'foot_outputs', 'fnames']}  # ADD 'fnames'
         for data_file in tqdm(data_files):
             try:
                 file_data = torch.load(data_folder / data_file)
@@ -58,16 +58,17 @@ class PoseDataset(Dataset):
         accs, oris, poses, trans = file_data['acc'], file_data['ori'], file_data['pose'], file_data['tran']
         joints = file_data.get('joint', [None] * len(poses))
         foots = file_data.get('contact', [None] * len(poses))
+        fnames = file_data.get('fname', [f"sample_{i}" for i in range(len(poses))])  # ADD default fnames if missing
 
-        for acc, ori, pose, tran, joint, foot in zip(accs, oris, poses, trans, joints, foots):
+        for acc, ori, pose, tran, joint, foot, fname in zip(accs, oris, poses, trans, joints, foots, fnames):  # ADD fname to zip
             acc, ori = acc[:, :5]/amass.acc_scale, ori[:, :5]
             pose_global, joint = self.bodymodel.forward_kinematics(pose=pose.view(-1, 216)) # convert local rotation to global
             pose = pose if self.evaluate else pose_global.view(-1, 24, 3, 3)                # use global only for training
             joint = joint.view(-1, 24, 3)
-            self._process_combo_data(acc, ori, pose, joint, tran, foot, data)
+            self._process_combo_data(acc, ori, pose, joint, tran, foot, fname, data)  # PASS fname
 
-    def _process_combo_data(self, acc, ori, pose, joint, tran, foot, data):
-        for _, c in self.combos:
+    def _process_combo_data(self, acc, ori, pose, joint, tran, foot, fname, data):  # ADD fname parameter
+        for combo_name, c in self.combos:
             # mask out layers for different subsets
             combo_acc = torch.zeros_like(acc)
             combo_ori = torch.zeros_like(ori)
@@ -80,6 +81,11 @@ class PoseDataset(Dataset):
             for key, value in zip(['imu_inputs', 'pose_outputs', 'joint_outputs', 'tran_outputs'],
                                 [imu_input, pose, joint, tran]):
                 data[key].extend(torch.split(value, data_len))
+
+            # ADD combo name to fname - replicate for each split
+            splits = torch.split(imu_input, data_len)
+            full_fname = f"{combo_name}/{fname}"  # CHANGED: prepend combo name
+            data['fnames'].extend([full_fname] * len(splits))
 
             if not (self.evaluate or self.finetune): # do not finetune translation module
                 self._process_translation_data(joint, tran, foot, data_len, data)
@@ -95,16 +101,17 @@ class PoseDataset(Dataset):
         imu = self.data['imu_inputs'][idx].float()
         joint = self.data['joint_outputs'][idx].float()
         tran = self.data['tran_outputs'][idx].float()
+        fname = self.data['fnames'][idx]  # ADD fname retrieval
         num_pred_joints = len(amass.pred_joints_set)
         pose = art.math.rotation_matrix_to_r6d(self.data['pose_outputs'][idx]).reshape(-1, num_pred_joints, 6)[:, amass.pred_joints_set].reshape(-1, 6*num_pred_joints)
 
         if self.evaluate or self.finetune:
-            return imu, pose, joint, tran
+            return imu, pose, joint, tran, fname  # ADD fname to return
 
         vel = self.data['vel_outputs'][idx].float()
         contact = self.data['foot_outputs'][idx].float()
 
-        return imu, pose, joint, tran, vel, contact
+        return imu, pose, joint, tran, vel, contact, fname  # ADD fname to return
 
     def __len__(self):
         return len(self.data['imu_inputs'])

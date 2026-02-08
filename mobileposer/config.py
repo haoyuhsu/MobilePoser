@@ -27,11 +27,11 @@ class paths:
     """Relevant paths for MobilePoser. Change as necessary."""
     root_dir = Path().absolute()
     checkpoint = root_dir / "checkpoints"
-    smpl_file = root_dir / "smpl/basicmodel_m.pkl"
+    smpl_file = root_dir / "../body_models/human_model_files/smpl/SMPL_MALE.pkl" # "smpl/basicmodel_m.pkl"
     weights_file = root_dir / "checkpoints/weights.pth"
     raw_amass = Path("/data/projects/Pose/raw/AMASS")           # TODO: replace with your path
-    raw_dip = Path("/data/projects/Pose/raw/DIP_IMU")           # TODO: replace with your path
-    raw_imuposer = Path("/data/projects/Pose/raw/IMUPoser")     # TODO: replace with your path
+    raw_dip = Path("/home/haoyuyh3/Documents/maxhsu/imu-humans/data/DIP_IMU")           # TODO: replace with your path
+    raw_imuposer = Path("/home/haoyuyh3/Documents/maxhsu/imu-humans/data/IMUPoser")     # TODO: replace with your path
     eval_dir = root_dir / "data/processed_datasets/eval"
     processed_datasets = root_dir / "data/processed_datasets"
     raw_totalcapture_official = root_dir / "data/raw/TotalCapture/raw"  # TODO: replace with your path
