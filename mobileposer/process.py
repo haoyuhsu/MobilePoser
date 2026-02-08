@@ -351,6 +351,124 @@ def process_imuposer(split: str="train"):
     torch.save(data, data_path)
 
 
+def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuyh3/Downloads/tmp_smpl_files', num_splits=1):
+    """Preprocess customized dataset with SMPL parameters."""
+    
+    def _foot_ground_probs(joint):
+        """Compute foot-ground contact probabilities."""
+        dist_lfeet = torch.norm(joint[1:, 10] - joint[:-1, 10], dim=1)
+        dist_rfeet = torch.norm(joint[1:, 11] - joint[:-1, 11], dim=1)
+        lfoot_contact = (dist_lfeet < 0.008).int()
+        rfoot_contact = (dist_rfeet < 0.008).int()
+        lfoot_contact = torch.cat((torch.zeros(1, dtype=torch.int), lfoot_contact))
+        rfoot_contact = torch.cat((torch.zeros(1, dtype=torch.int), rfoot_contact))
+        return torch.stack((lfoot_contact, rfoot_contact), dim=1)
+
+    data_dir = os.path.join(data_root, split)
+    
+    if not os.path.exists(data_dir):
+        print(f"{dataset_name} data directory not found: {data_dir}")
+        return
+    
+    file_list = sorted([f for f in os.listdir(data_dir) if f.endswith('.pkl')])
+    
+    total_files = len(file_list)
+    files_per_split = total_files // num_splits
+
+    print(f'Processing {dataset_name} {split} split: {total_files} files into {num_splits} splits (~{files_per_split} files each)')
+    
+    for split_idx in range(num_splits):
+
+        start_idx = split_idx * files_per_split
+        if split_idx == num_splits - 1:
+            # Last split gets remaining files
+            end_idx = total_files
+        else:
+            end_idx = (split_idx + 1) * files_per_split
+        
+        split_file_list = file_list[start_idx:end_idx]
+
+        out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc, out_contact = [], [], [], [], [], [], []
+
+        print(f'\nProcessing split {split_idx:03d} ({len(split_file_list)} files)')
+        for pkl_file in tqdm(split_file_list):
+            file_path = os.path.join(data_dir, pkl_file)
+            try:
+                data = pickle.load(open(file_path, 'rb'))
+            except:
+                print(f'Failed to load {pkl_file}')
+                continue
+            
+            smpl_params = data['smpl_params']
+            
+            # Extract SMPL parameters
+            global_orient = torch.from_numpy(smpl_params['global_orient']).float()  # (N, 3)
+            body_pose = torch.from_numpy(smpl_params['body_pose']).float()  # (N, 23, 3)
+            transl = torch.from_numpy(smpl_params['transl']).float()  # (N, 3)
+            
+            # Use zero shape (default body shape)
+            shape = torch.zeros(10)  # (10,)
+            
+            # Combine global_orient and body_pose to get full pose (N, 24, 3)
+            pose_aa = torch.cat([global_orient.unsqueeze(1), body_pose], dim=1)  # (N, 24, 3)
+            
+            seq_len = pose_aa.shape[0]
+            
+            # Skip sequences that are too short
+            if seq_len <= 12:
+                print(f'\tDiscard {pkl_file} with length {seq_len}')
+                continue
+            
+            # Convert to rotation matrices for forward kinematics
+            p = math.axis_angle_to_rotation_matrix(pose_aa).view(-1, 24, 3, 3)
+            
+            # Forward kinematics to get joints and vertices
+            grot, joint, vert = body_model.forward_kinematics(p, shape, transl, calc_mesh=True)
+            
+            # Synthesize IMU accelerations from vertices with smoothing
+            vacc = _syn_acc(vert[:, vi_mask])  # N, 6, 3
+            
+            # Extract virtual IMU orientations
+            vrot = grot[:, ji_mask]  # N, 6, 3, 3
+            
+            # Compute foot contact labels
+            contact = _foot_ground_probs(joint)  # N, 2
+            
+            # Store outputs in MobilePoser format
+            out_pose.append(p.clone())  # N, 24, 3, 3
+            out_tran.append(transl.clone())  # N, 3
+            out_shape.append(shape.clone())  # 10
+            out_joint.append(joint[:, :24].contiguous().clone())  # N, 24, 3
+            out_vacc.append(vacc)  # N, 6, 3
+            out_vrot.append(vrot)  # N, 6, 3, 3
+            out_contact.append(contact)  # N, 2
+        
+        print(f'Saving {len(out_pose)} sequences...')
+        
+        # Save in MobilePoser format (single .pt file with dict)
+        data = {
+            'joint': out_joint,
+            'pose': out_pose,
+            'shape': out_shape,
+            'tran': out_tran,
+            'acc': out_vacc,
+            'ori': out_vrot,
+            'contact': out_contact
+        }
+        
+        # Save with split index suffix
+        if num_splits > 1:
+            data_path = paths.processed_datasets / f"{dataset_name}_{split}_{split_idx:03d}.pt"
+        else:
+            data_path = paths.processed_datasets / f"{dataset_name}_{split}.pt"
+        
+        torch.save(data, data_path)
+        print(f"Processed {dataset_name} {split} dataset saved at: {data_path}")
+
+    print(f'\nAll {num_splits} splits of {dataset_name} {split} dataset saved')
+    
+
+
 def create_directories():
     paths.processed_datasets.mkdir(exist_ok=True, parents=True)
     paths.eval_dir.mkdir(exist_ok=True, parents=True)
@@ -375,5 +493,11 @@ if __name__ == "__main__":
     elif args.dataset == "dip":
         process_dipimu(split="train")
         process_dipimu(split="test")
+    elif args.dataset == "humanml":
+        process_custom(split="train", dataset_name="humanml", data_root='/home/haoyuyh3/Downloads/humanml_smpl_files', num_splits=5)
+        process_custom(split="test", dataset_name="humanml", data_root='/home/haoyuyh3/Downloads/humanml_smpl_files', num_splits=5)
+    elif args.dataset == "lingo":
+        process_custom(split="train", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)
+        process_custom(split="test", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)
     else:
         raise ValueError(f"Dataset {args.dataset} not supported.")
