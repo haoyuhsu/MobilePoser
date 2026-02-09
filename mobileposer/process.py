@@ -388,7 +388,7 @@ def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuy
         
         split_file_list = file_list[start_idx:end_idx]
 
-        out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc, out_contact, out_fname = [], [], [], [], [], [], [], []
+        out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc, out_contact, out_fname, out_vpos = [], [], [], [], [], [], [], [], []
 
         print(f'\nProcessing split {split_idx:03d} ({len(split_file_list)} files)')
         for pkl_file in tqdm(split_file_list):
@@ -431,6 +431,9 @@ def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuy
             # Extract virtual IMU orientations
             vrot = grot[:, ji_mask]  # N, 6, 3, 3
             
+            # Store vertex positions for runtime IMU simulation
+            vpos = vert[:, vi_mask]  # N, 6, 3
+            
             # Compute foot contact labels
             contact = _foot_ground_probs(joint)  # N, 2
             
@@ -443,6 +446,7 @@ def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuy
             out_vrot.append(vrot)  # N, 6, 3, 3
             out_contact.append(contact)  # N, 2
             out_fname.append(pkl_file.replace('.pkl', ''))  # Store filename without extension
+            out_vpos.append(vpos)  # N, 6, 3 - vertex positions for IMU simulation
         
         print(f'Saving {len(out_pose)} sequences...')
         
@@ -455,14 +459,19 @@ def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuy
             'acc': out_vacc,
             'ori': out_vrot,
             'contact': out_contact,
-            'fname': out_fname
+            'fname': out_fname,
+            'vpos': out_vpos  # vertex positions for IMU simulation
         }
+        
+        # Determine save directory (test split goes to eval subdirectory)
+        save_dir = paths.processed_datasets / 'eval' if split == 'test' else paths.processed_datasets
+        save_dir.mkdir(exist_ok=True, parents=True)
         
         # Save with split index suffix
         if num_splits > 1:
-            data_path = paths.processed_datasets / f"{dataset_name}_{split}_{split_idx:03d}.pt"
+            data_path = save_dir / f"{dataset_name}_{split}_{split_idx:03d}.pt"
         else:
-            data_path = paths.processed_datasets / f"{dataset_name}_{split}.pt"
+            data_path = save_dir / f"{dataset_name}_{split}.pt"
         
         torch.save(data, data_path)
         print(f"Processed {dataset_name} {split} dataset saved at: {data_path}")

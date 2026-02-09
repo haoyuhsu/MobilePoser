@@ -1,3 +1,6 @@
+python -m mobileposer.train \
+    --dataset lingo
+
 # python -m mobileposer.combine_weights \
 #     --checkpoint 2
 

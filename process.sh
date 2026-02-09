@@ -1,10 +1,6 @@
-# python -m mobileposer.process \
-#     --dataset lingo
-
-
 python -m mobileposer.process \
-    --dataset humanml
+    --dataset lingo
 
 
-python -m mobileposer.train \
-    --dataset humanml
+# python -m mobileposer.process \
+#     --dataset humanml

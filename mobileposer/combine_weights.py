@@ -36,7 +36,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--weights", nargs="+", help="List of weight paths.")
     parser.add_argument("--finetune", type=str, default=None)
-    parser.add_argument("--checkpoint", type=int, help="Checkpoint number.", default=1) 
+    parser.add_argument("--checkpoint", type=str, help="Checkpoint number.", default="1") 
     args = parser.parse_args()
 
     checkpoints = {}

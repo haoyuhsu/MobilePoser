@@ -8,6 +8,12 @@ from typing import List
 import random
 import lightning as L
 from tqdm import tqdm 
+import sys
+from pathlib import Path
+
+# Add imu_synthesis directory to path to import simulation utilities
+sys.path.append('/home/haoyuyh3/Documents/maxhsu/imu-humans/imu-human-mllm/imu_synthesis')
+from get_imu_readings import simulate_imu_readings
 
 import mobileposer.articulate as art
 from mobileposer.config import *
@@ -58,11 +64,11 @@ class PoseDataset(Dataset):
 
     def _prepare_dataset(self):
         """Load raw data without combo-specific processing."""
-        data_folder = paths.processed_datasets / ('eval' if (self.finetune or self.evaluate) else '')
+        data_folder = paths.processed_datasets / ('eval' if (self.finetune or self.evaluate or self.fold == 'test') else '')
         data_files = self._get_data_files(data_folder)
         
         # Store raw IMU data (acc, ori) and outputs without combo expansion
-        data = {key: [] for key in ['acc', 'ori', 'pose_outputs', 'joint_outputs', 'tran_outputs', 'vel_outputs', 'foot_outputs', 'fnames']}
+        data = {key: [] for key in ['acc', 'ori', 'pose_outputs', 'joint_outputs', 'tran_outputs', 'vel_outputs', 'foot_outputs', 'fnames', 'vpos']}
         
         for data_file in tqdm(data_files):
             try:
@@ -78,34 +84,59 @@ class PoseDataset(Dataset):
         joints = file_data.get('joint', [None] * len(poses))
         foots = file_data.get('contact', [None] * len(poses))
         fnames = file_data.get('fname', [f"sample_{i}" for i in range(len(poses))])
+        vpositions = file_data.get('vpos', [None] * len(poses))  # vertex positions for IMU simulation
+        
+        # Minimum frames required for IMU simulation
+        MIN_FRAMES = 4
 
-        for acc, ori, pose, tran, joint, foot, fname in zip(accs, oris, poses, trans, joints, foots, fnames):
+        for acc, ori, pose, tran, joint, foot, fname, vpos in zip(accs, oris, poses, trans, joints, foots, fnames, vpositions):
+            
+            # Skip sequences that are too short
+            if len(acc) < MIN_FRAMES:
+                continue
+            
             # Normalize acc and ori
-            acc, ori = acc[:, :5] / amass.acc_scale, ori[:, :5]
+            acc, ori = acc[:, :6] / amass.acc_scale, ori[:, :6]    # use all 6 IMUs, filter later
             
             # Convert pose to global rotation
             pose_global, joint = self.bodymodel.forward_kinematics(pose=pose.view(-1, 216))
             pose = pose if self.evaluate else pose_global.view(-1, 24, 3, 3)
             joint = joint.view(-1, 24, 3)
             
-            # Split data into windows
-            data_len = len(acc) if self.evaluate else datasets.window_length
-            
-            # Store raw acc and ori (not combo-masked yet)
-            data['acc'].extend(torch.split(acc, data_len))
-            data['ori'].extend(torch.split(ori, data_len))
-            data['pose_outputs'].extend(torch.split(pose, data_len))
-            data['joint_outputs'].extend(torch.split(joint, data_len))
-            data['tran_outputs'].extend(torch.split(tran, data_len))
-            data['fnames'].extend([fname] * len(torch.split(acc, data_len)))
-            
-            # Process translation data if needed
-            if not (self.evaluate or self.finetune):
-                root_vel = torch.cat((torch.zeros(1, 3), tran[1:] - tran[:-1]))
-                vel = torch.cat((torch.zeros(1, 24, 3), torch.diff(joint, dim=0)))
-                vel[:, 0] = root_vel
-                data['vel_outputs'].extend(torch.split(vel * (datasets.fps / amass.vel_scale), data_len))
-                data['foot_outputs'].extend(torch.split(foot, data_len))
+            # During evaluation/testing: use entire sequence
+            # During training: use first K frames (window_length)
+            if self.evaluate:
+                # Use entire sequence for evaluation
+                data['acc'].append(acc)
+                data['ori'].append(ori)
+                data['pose_outputs'].append(pose)
+                data['joint_outputs'].append(joint)
+                data['tran_outputs'].append(tran)
+                data['fnames'].append(fname)
+                data['vpos'].append(vpos)
+            else:
+                # Training: use only first window_length frames
+                data_len = min(datasets.window_length, len(acc))
+                
+                data['acc'].append(acc[:data_len])
+                data['ori'].append(ori[:data_len])
+                data['pose_outputs'].append(pose[:data_len])
+                data['joint_outputs'].append(joint[:data_len])
+                data['tran_outputs'].append(tran[:data_len])
+                data['fnames'].append(fname)
+                data['vpos'].append(vpos[:data_len] if vpos is not None else None)
+                
+                # Process translation data if needed
+                if not (self.evaluate or self.finetune):
+                    tran_chunk = tran[:data_len]
+                    joint_chunk = joint[:data_len]
+                    foot_chunk = foot[:data_len]
+                    
+                    root_vel = torch.cat((torch.zeros(1, 3), tran_chunk[1:] - tran_chunk[:-1]))
+                    vel = torch.cat((torch.zeros(1, 24, 3), torch.diff(joint_chunk, dim=0)))
+                    vel[:, 0] = root_vel
+                    data['vel_outputs'].append(vel * (datasets.fps / amass.vel_scale))
+                    data['foot_outputs'].append(foot_chunk)
 
     def _apply_combo_mask(self, acc, ori, combo_indices):
         """Apply combo mask to acceleration and orientation data."""
@@ -117,20 +148,51 @@ class PoseDataset(Dataset):
         return imu_input
 
     def __getitem__(self, idx):
-
+        
+        # Get raw data
+        joint = self.data['joint_outputs'][idx].float()
+        tran = self.data['tran_outputs'][idx].float()
+        fname = self.data['fnames'][idx]
+        
+        # Get pre-computed ori (joint rotations) - always available
+        ori = self.data['ori'][idx].float()  # N, 6, 3, 3
+        
+        # Check if we have vertex positions for runtime IMU simulation
+        vpos = self.data['vpos'][idx]
+        
+        if vpos is not None:
+            # Runtime IMU simulation with noise
+            vpos_full = vpos.float()  # N, 6, 3
+            ori_full = ori.float()    # N, 6, 3, 3
+            
+            # Simulate IMU readings for ALL 6 IMUs first
+            # Note: simulate_imu_readings expects (N, num_imus, 3) for positions and (N, num_imus, 3, 3) for rotations
+            a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(
+                vpos_full, 
+                ori_full, 
+                fps=datasets.fps,
+                noise_raw_traj=False,
+                noise_syn_imu=False,
+                noise_est_orient=False,
+                skip_ESKF=True,
+                device='cpu'
+            )
+            
+            # Normalize acceleration
+            acc = a_sim[:, :5] / amass.acc_scale  # N, 5, 3
+            ori = R_sim[:, :5]  # N, 5, 3, 3
+        else:
+            # Use pre-computed accelerations and orientations
+            # acc = self.data['acc'][idx][:, :5].float()
+            # ori = self.data['ori'][idx][:, :5].float()
+            raise ValueError(f"Vertex positions not available for {fname}, cannot simulate IMU readings. Please ensure vpos is included in the dataset for runtime simulation.")
+        
         if self.evaluate:
             combo_name, combo_indices = 'global', [0, 1, 2, 3, 4]     # use global combo for consistent evaluation
         else:
             # Sample a random combo at runtime
             combo_name, combo_indices = random.choice(self.combos)
-        
-        # Get raw data
-        acc = self.data['acc'][idx].float()
-        ori = self.data['ori'][idx].float()
-        joint = self.data['joint_outputs'][idx].float()
-        tran = self.data['tran_outputs'][idx].float()
-        fname = self.data['fnames'][idx]
-        
+
         # Apply combo mask
         imu = self._apply_combo_mask(acc, ori, combo_indices)
         
