@@ -168,8 +168,10 @@ if __name__ == '__main__':
     model = load_model(args.model)
 
     # load dataset
-    if args.dataset not in datasets.test_datasets:
-        raise ValueError(f"Test dataset: {args.dataset} not found.")
+    # if args.dataset not in datasets.test_datasets:
+    #     raise ValueError(f"Test dataset: {args.dataset} not found.")
+    # dataset = PoseDataset(fold='test', evaluate=args.dataset)
+
     dataset = PoseDataset(fold='test', evaluate=args.dataset)
 
     # evaluate pose

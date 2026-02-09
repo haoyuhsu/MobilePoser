@@ -388,7 +388,7 @@ def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuy
         
         split_file_list = file_list[start_idx:end_idx]
 
-        out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc, out_contact = [], [], [], [], [], [], []
+        out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc, out_contact, out_fname = [], [], [], [], [], [], [], []
 
         print(f'\nProcessing split {split_idx:03d} ({len(split_file_list)} files)')
         for pkl_file in tqdm(split_file_list):
@@ -442,6 +442,7 @@ def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuy
             out_vacc.append(vacc)  # N, 6, 3
             out_vrot.append(vrot)  # N, 6, 3, 3
             out_contact.append(contact)  # N, 2
+            out_fname.append(pkl_file.replace('.pkl', ''))  # Store filename without extension
         
         print(f'Saving {len(out_pose)} sequences...')
         
@@ -453,7 +454,8 @@ def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuy
             'tran': out_tran,
             'acc': out_vacc,
             'ori': out_vrot,
-            'contact': out_contact
+            'contact': out_contact,
+            'fname': out_fname
         }
         
         # Save with split index suffix
@@ -464,6 +466,8 @@ def process_custom(split='train', dataset_name='custom', data_root='/home/haoyuy
         
         torch.save(data, data_path)
         print(f"Processed {dataset_name} {split} dataset saved at: {data_path}")
+
+        import gc; gc.collect()  # Clean up memory after each split
 
     print(f'\nAll {num_splits} splits of {dataset_name} {split} dataset saved')
     
@@ -495,7 +499,7 @@ if __name__ == "__main__":
         process_dipimu(split="test")
     elif args.dataset == "humanml":
         process_custom(split="train", dataset_name="humanml", data_root='/home/haoyuyh3/Downloads/humanml_smpl_files', num_splits=5)
-        process_custom(split="test", dataset_name="humanml", data_root='/home/haoyuyh3/Downloads/humanml_smpl_files', num_splits=5)
+        process_custom(split="test", dataset_name="humanml", data_root='/home/haoyuyh3/Downloads/humanml_smpl_files', num_splits=1)
     elif args.dataset == "lingo":
         process_custom(split="train", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)
         process_custom(split="test", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)

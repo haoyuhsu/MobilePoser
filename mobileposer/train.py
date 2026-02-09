@@ -32,9 +32,10 @@ torch.set_float32_matmul_precision('medium')
 
 class TrainingManager:
     """Manage training of MobilePoser modules."""
-    def __init__(self, finetune: str=None, fast_dev_run: bool=False):
+    def __init__(self, finetune: str=None, fast_dev_run: bool=False, dataset_source: str='lingo'):
         self.finetune = finetune
         self.fast_dev_run = fast_dev_run
+        self.dataset_source = dataset_source
         self.hypers = finetune_hypers if finetune else train_hypers
 
     def _setup_wandb_logger(self, save_path: Path):
@@ -80,12 +81,13 @@ class TrainingManager:
         # create directory for module
         module_path = checkpoint_path / module_name
         make_dir(module_path)
-        datamodule = PoseDataModule(finetune=self.finetune)
+        datamodule = PoseDataModule(finetune=self.finetune, dataset_source=self.dataset_source)
         trainer = self._setup_trainer(module_path)
 
         print()
         print("-" * 50)
         print(f"Training Module: {module_name}")
+        print(f"Dataset Source: {self.dataset_source}")
         print("-" * 50)
         print()
 
@@ -97,7 +99,7 @@ class TrainingManager:
             torch.cuda.empty_cache()
 
 
-def get_checkpoint_path(finetune: str, init_from: str):
+def get_checkpoint_path(finetune: str, init_from: str, dataset_source: str):
     if finetune:
         # finetune from a checkpoint
         parts = init_from.split(os.path.sep)
@@ -106,8 +108,9 @@ def get_checkpoint_path(finetune: str, init_from: str):
         checkpoint_path = checkpoint_path / finetune_dir
     else:
         # make directory for trained models
-        dir_name = get_dir_number(paths.checkpoint) 
-        checkpoint_path = paths.checkpoint / str(dir_name)
+        dir_name = get_dir_number(paths.checkpoint)
+        # Add dataset source to directory name
+        checkpoint_path = paths.checkpoint / f"{dir_name}_{dataset_source}"
     
     make_dir(checkpoint_path)
     return Path(checkpoint_path)
@@ -119,6 +122,9 @@ if __name__ == "__main__":
     parser.add_argument("--fast-dev-run", action="store_true")
     parser.add_argument("--finetune", type=str, default=None)
     parser.add_argument("--init-from", nargs="?", default="scratch", type=str)
+    parser.add_argument("--dataset", type=str, default="lingo", 
+                        choices=['lingo', 'humanml'],
+                        help="Dataset source to use for training/testing")
     args = parser.parse_args()
 
     # set seed for reproducible results
@@ -128,10 +134,11 @@ if __name__ == "__main__":
     paths.checkpoint.mkdir(exist_ok=True)
 
     # initialize training manager
-    checkpoint_path = get_checkpoint_path(args.finetune, args.init_from)
+    checkpoint_path = get_checkpoint_path(args.finetune, args.init_from, args.dataset)
     training_manager = TrainingManager(
         finetune=args.finetune,
-        fast_dev_run=args.fast_dev_run
+        fast_dev_run=args.fast_dev_run,
+        dataset_source=args.dataset
     )
 
     # train single module

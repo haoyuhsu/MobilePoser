@@ -38,7 +38,15 @@ class PoseDataset(Dataset):
         if self.finetune:
             return [datasets.finetune_datasets[self.finetune]]
         else:
-            if self.dataset_source in datasets.train_datasets:
+            # Check for multiple split files (e.g., humanml_train_000.pt, humanml_train_001.pt)
+            split_pattern = f"{self.dataset_source}_train_*.pt"
+            split_files = sorted([x.name for x in data_folder.glob(split_pattern)])
+            
+            if split_files:
+                # Multiple split files found, load all of them
+                return split_files
+            elif self.dataset_source in datasets.train_datasets:
+                # Single file mapping
                 return [datasets.train_datasets[self.dataset_source]]
             else:
                 # Fallback to loading all files in the folder
@@ -49,9 +57,13 @@ class PoseDataset(Dataset):
         return [datasets.test_datasets[test_key]]
 
     def _prepare_dataset(self):
+        """Load raw data without combo-specific processing."""
         data_folder = paths.processed_datasets / ('eval' if (self.finetune or self.evaluate) else '')
         data_files = self._get_data_files(data_folder)
-        data = {key: [] for key in ['imu_inputs', 'pose_outputs', 'joint_outputs', 'tran_outputs', 'vel_outputs', 'foot_outputs', 'fnames']}
+        
+        # Store raw IMU data (acc, ori) and outputs without combo expansion
+        data = {key: [] for key in ['acc', 'ori', 'pose_outputs', 'joint_outputs', 'tran_outputs', 'vel_outputs', 'foot_outputs', 'fnames']}
+        
         for data_file in tqdm(data_files):
             try:
                 file_data = torch.load(data_folder / data_file)
@@ -105,8 +117,12 @@ class PoseDataset(Dataset):
         return imu_input
 
     def __getitem__(self, idx):
-        # Sample a random combo at runtime
-        combo_name, combo_indices = random.choice(self.combos)
+
+        if self.evaluate:
+            combo_name, combo_indices = 'global', [0, 1, 2, 3, 4]     # use global combo for consistent evaluation
+        else:
+            # Sample a random combo at runtime
+            combo_name, combo_indices = random.choice(self.combos)
         
         # Get raw data
         acc = self.data['acc'][idx].float()
