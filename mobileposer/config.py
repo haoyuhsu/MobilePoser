@@ -137,13 +137,54 @@ class datasets:
     humanml_train = "humanml_train.pt"
     humanml_test = "humanml_test.pt"
 
+    # All dataset
+    all_train = [
+        "aist_train.pt",
+        "BABEL_train.pt",
+        "EgoBody_train.pt",
+        "finedance_train.pt",
+        "fit3d_train.pt",
+        "haa500_train.pt",
+        "hi4d_train.pt",
+        "humanml_train.pt",
+        "humansc3d_train.pt",
+        "idea400_train.pt",
+        "interhuman_train.pt",
+        "interx_train.pt",
+        "kungfu_train.pt",
+        "LINGO_train.pt",
+        "music_train.pt",
+        "PhantomDanceDatav1.1_train.pt",
+        "trumans_train.pt"
+    ]
+    all_test = [
+        # "aist_test.pt",
+        # "BABEL_test.pt",
+        # "EgoBody_test.pt",
+        # "finedance_test.pt",
+        # "fit3d_test.pt",
+        # "haa500_test.pt",
+        # "hi4d_test.pt",
+        # "humanml_test.pt",
+        # "humansc3d_test.pt",
+        # "idea400_test.pt",
+        # "interhuman_test.pt",
+        # "interx_test.pt",
+        # "kungfu_test.pt",
+        # "LINGO_test.pt",
+        # "music_test.pt",
+        # "PhantomDanceDatav1.1_test.pt",    # save test set loading time for now
+        "trumans_test.pt"
+    ]
+
     # Test datasets
     test_datasets = {
         'dip': dip_test,
         'totalcapture': totalcapture,
         'imuposer': imuposer_test,
         'lingo': lingo_test,
-        'humanml': humanml_test
+        'humanml': humanml_test,
+        'all': all_test,
     }
 
     # Finetune datasets
@@ -155,7 +196,8 @@ class datasets:
     # Training datasets (for normal training)
     train_datasets = {
         'lingo': lingo_train,
-        'humanml': humanml_train
+        'humanml': humanml_train,
+        'all': all_train,
     }
 
     # AMASS datasets (add more as they become available in AMASS!)

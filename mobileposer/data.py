@@ -12,7 +12,8 @@ import sys
 from pathlib import Path
 
 # Add imu_synthesis directory to path to import simulation utilities
-sys.path.append('/home/haoyuyh3/Documents/maxhsu/imu-humans/imu-human-mllm/imu_synthesis')
+# sys.path.append('/home/haoyuyh3/Documents/maxhsu/imu-humans/imu-human-mllm/imu_synthesis')
+sys.path.append('/projects/illinois/eng/cs/shenlong/personals/haoyu/imu-humans/code/imu-human-mllm/imu_synthesis')
 from get_imu_readings import simulate_imu_readings
 
 import mobileposer.articulate as art
@@ -45,22 +46,25 @@ class PoseDataset(Dataset):
             return [datasets.finetune_datasets[self.finetune]]
         else:
             # Check for multiple split files (e.g., humanml_train_000.pt, humanml_train_001.pt)
-            split_pattern = f"{self.dataset_source}_train_*.pt"
+            split_pattern = f"{self.dataset_source}_train.pt"
             split_files = sorted([x.name for x in data_folder.glob(split_pattern)])
             
             if split_files:
                 # Multiple split files found, load all of them
                 return split_files
             elif self.dataset_source in datasets.train_datasets:
-                # Single file mapping
-                return [datasets.train_datasets[self.dataset_source]]
+                print(f"Load {self.dataset_source} training data")
+                data_files = datasets.train_datasets[self.dataset_source]
+                return data_files if isinstance(data_files, list) else [data_files]
             else:
                 # Fallback to loading all files in the folder
+                print(f"No specific training files found for {self.dataset_source}, loading all files in {data_folder}.")
                 return [x.name for x in data_folder.iterdir() if not x.is_dir()]
 
     def _get_test_files(self):
         test_key = self.evaluate if self.evaluate else self.dataset_source
-        return [datasets.test_datasets[test_key]]
+        data_files = datasets.test_datasets[test_key]
+        return data_files if isinstance(data_files, list) else [data_files]
 
     def _prepare_dataset(self):
         """Load raw data without combo-specific processing."""
@@ -74,6 +78,11 @@ class PoseDataset(Dataset):
             try:
                 file_data = torch.load(data_folder / data_file)
                 self._process_file_data(file_data, data)
+                
+                # save memory
+                del file_data
+                import gc; gc.collect()
+
             except Exception as e:
                 print(f"Error processing {data_file}: {e}.")
         return data

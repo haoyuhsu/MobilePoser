@@ -122,8 +122,7 @@ if __name__ == "__main__":
     parser.add_argument("--fast-dev-run", action="store_true")
     parser.add_argument("--finetune", type=str, default=None)
     parser.add_argument("--init-from", nargs="?", default="scratch", type=str)
-    parser.add_argument("--dataset", type=str, default="lingo", 
-                        choices=['lingo', 'humanml'],
+    parser.add_argument("--dataset", type=str, default="lingo",
                         help="Dataset source to use for training/testing")
     args = parser.parse_args()
 
