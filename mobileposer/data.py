@@ -176,16 +176,38 @@ class PoseDataset(Dataset):
             
             # Simulate IMU readings for ALL 6 IMUs first
             # Note: simulate_imu_readings expects (N, num_imus, 3) for positions and (N, num_imus, 3, 3) for rotations
-            a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(
-                vpos_full, 
-                ori_full, 
-                fps=datasets.fps,
-                noise_raw_traj=False,
-                noise_syn_imu=False,
-                noise_est_orient=False,
-                skip_ESKF=True,
-                device='cpu'
-            )
+            if self.evaluate:
+                a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(   # use augmentation-free simulation for evaluation
+                    vpos_full, 
+                    ori_full, 
+                    fps=datasets.fps,
+                    noise_raw_traj=False,
+                    noise_syn_imu=False,
+                    noise_est_orient=False,
+                    skip_ESKF=True,
+                    device='cpu'
+                )
+            else:
+                # a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(   # use noisy simulation for training
+                #     vpos_full, 
+                #     ori_full, 
+                #     fps=datasets.fps,
+                #     noise_raw_traj=True,
+                #     noise_syn_imu=True,
+                #     noise_est_orient=True,
+                #     skip_ESKF=True,
+                #     device='cpu'
+                # )
+                a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(   # use augmentation-free simulation for training
+                    vpos_full, 
+                    ori_full, 
+                    fps=datasets.fps,
+                    noise_raw_traj=False,
+                    noise_syn_imu=False,
+                    noise_est_orient=False,
+                    skip_ESKF=True,
+                    device='cpu'
+                )
             
             # Normalize acceleration
             acc = a_sim[:, :5] / amass.acc_scale  # N, 5, 3

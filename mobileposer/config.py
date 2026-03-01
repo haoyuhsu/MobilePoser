@@ -7,7 +7,7 @@ class train_hypers:
     """Hyperparameters for training."""
     batch_size = 256
     num_workers = 8
-    num_epochs = 60
+    num_epochs = 20
     accelerator = "gpu"
     device = 0
     lr = 1e-3
@@ -155,12 +155,23 @@ class datasets:
         "LINGO_train.pt",
         "music_train.pt",
         "PhantomDanceDatav1.1_train.pt",
-        "trumans_train.pt"
+        "trumans_train.pt",
+        ### MotionGV ###
+        "Mirror_MotionGV_folder0_train.pt",
+        "Mirror_MotionGV_folder1_train.pt",
+        "Mirror_MotionGV_folder2_train.pt",
+        "Mirror_MotionGV_folder3_train.pt",
+        "Mirror_MotionGV_folder4_train.pt",
+        "Mirror_MotionGV_folder5_train.pt",
+        "Mirror_MotionGV_folder6_train.pt",
+        "Mirror_MotionGV_folder7_train.pt",
+        "Mirror_MotionGV_folder8_train.pt",
+        "Mirror_MotionGV_folder9_train.pt",
     ]
     all_test = [
         # "aist_test.pt",
         # "BABEL_test.pt",
-        # "EgoBody_test.pt",
+        "EgoBody_test.pt",   # save test set loading time for now
         # "finedance_test.pt",
         # "fit3d_test.pt",
         # "haa500_test.pt",
@@ -173,8 +184,7 @@ class datasets:
         # "kungfu_test.pt",
         # "LINGO_test.pt",
         # "music_test.pt",
-        # "PhantomDanceDatav1.1_test.pt",    # save test set loading time for now
-        "trumans_test.pt"
+        # "trumans_test.pt"
     ]
 
     # Test datasets
@@ -185,6 +195,7 @@ class datasets:
         'lingo': lingo_test,
         'humanml': humanml_test,
         'all': all_test,
+        'all_no_MotionGV': [dataset for dataset in all_test if "MotionGV" not in dataset]
     }
 
     # Finetune datasets
@@ -198,6 +209,7 @@ class datasets:
         'lingo': lingo_train,
         'humanml': humanml_train,
         'all': all_train,
+        'all_no_MotionGV': [dataset for dataset in all_train if "MotionGV" not in dataset]
     }
 
     # AMASS datasets (add more as they become available in AMASS!)

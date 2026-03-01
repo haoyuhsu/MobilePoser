@@ -49,7 +49,7 @@ class TrainingManager:
     def _setup_callbacks(self, save_path):
         checkpoint_callback = ModelCheckpoint(
                 monitor="validation_step_loss",
-                save_top_k=3,
+                save_top_k=10,
                 mode="min",
                 verbose=False,
                 dirpath=save_path, 
