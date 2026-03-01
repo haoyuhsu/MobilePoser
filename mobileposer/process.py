@@ -507,10 +507,10 @@ if __name__ == "__main__":
         process_dipimu(split="train")
         process_dipimu(split="test")
     elif args.dataset == "humanml":
-        process_custom(split="train", dataset_name="humanml", data_root='/home/haoyuyh3/Downloads/humanml_smpl_files', num_splits=5)
+        # process_custom(split="train", dataset_name="humanml", data_root='/home/haoyuyh3/Downloads/humanml_smpl_files', num_splits=5)
         process_custom(split="test", dataset_name="humanml", data_root='/home/haoyuyh3/Downloads/humanml_smpl_files', num_splits=1)
     elif args.dataset == "lingo":
-        process_custom(split="train", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)
+        # process_custom(split="train", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)
         process_custom(split="test", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)
     else:
         raise ValueError(f"Dataset {args.dataset} not supported.")

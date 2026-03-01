@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 # Add imu_synthesis directory to path to import simulation utilities
-# sys.path.append('/home/haoyuyh3/Documents/maxhsu/imu-humans/imu-human-mllm/imu_synthesis')
+sys.path.append('/home/haoyuyh3/Documents/maxhsu/imu-humans/imu-human-mllm/imu_synthesis')
 sys.path.append('/projects/illinois/eng/cs/shenlong/personals/haoyu/imu-humans/code/imu-human-mllm/imu_synthesis')
 from get_imu_readings import simulate_imu_readings
 
