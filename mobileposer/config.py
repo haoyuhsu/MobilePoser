@@ -137,6 +137,12 @@ class datasets:
     humanml_train = "humanml_train.pt"
     humanml_test = "humanml_test.pt"
 
+    # ParaHome dataset
+    parahome_test = "parahome_test.pt"
+
+    # Humoto dataset
+    humoto_test = "humoto_test.pt"
+
     # All dataset
     all_train = [
         "aist_train.pt",
@@ -194,6 +200,8 @@ class datasets:
         'imuposer': imuposer_test,
         'lingo': lingo_test,
         'humanml': humanml_test,
+        'parahome': parahome_test,
+        'humoto': humoto_test,
         'all': all_test,
         'all_no_MotionGV': [dataset for dataset in all_test if "MotionGV" not in dataset]
     }

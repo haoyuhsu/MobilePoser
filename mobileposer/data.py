@@ -23,12 +23,13 @@ from mobileposer.helpers import *
 
 
 class PoseDataset(Dataset):
-    def __init__(self, fold: str='train', evaluate: str=None, finetune: str=None, dataset_source: str='lingo'):
+    def __init__(self, fold: str='train', evaluate: str=None, finetune: str=None, dataset_source: str='lingo', combo: str=None):
         super().__init__()
         self.fold = fold
         self.evaluate = evaluate
         self.finetune = finetune
         self.dataset_source = dataset_source
+        self.combo = combo  # Fixed combo for evaluation, None means random sampling during training
         self.bodymodel = art.model.ParametricModel(paths.smpl_file)
         self.combos = list(amass.combos.items())   # use IMUPoser combos
         self.data = self._prepare_dataset()
@@ -219,7 +220,11 @@ class PoseDataset(Dataset):
             raise ValueError(f"Vertex positions not available for {fname}, cannot simulate IMU readings. Please ensure vpos is included in the dataset for runtime simulation.")
         
         if self.evaluate:
-            combo_name, combo_indices = 'global', [0, 1, 2, 3, 4]     # use global combo for consistent evaluation
+            if self.combo:
+                combo_name = self.combo
+                combo_indices = amass.combos[self.combo]
+            else:
+                combo_name, combo_indices = 'global', [0, 1, 2, 3, 4]     # use global combo as default
         else:
             # Sample a random combo at runtime
             combo_name, combo_indices = random.choice(self.combos)

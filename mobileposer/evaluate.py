@@ -162,6 +162,9 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--model', type=str, required=True)
     parser.add_argument('--dataset', type=str, default='dip')
+    parser.add_argument('--combo', type=str, default='global',
+                        choices=list(amass.combos.keys()),
+                        help='IMU combo configuration to use for evaluation')
     args = parser.parse_args()
 
     # load model 
@@ -172,8 +175,8 @@ if __name__ == '__main__':
     #     raise ValueError(f"Test dataset: {args.dataset} not found.")
     # dataset = PoseDataset(fold='test', evaluate=args.dataset)
 
-    dataset = PoseDataset(fold='test', evaluate=args.dataset)
+    dataset = PoseDataset(fold='test', evaluate=args.dataset, combo=args.combo)
 
     # evaluate pose
-    print(f"Starting evaluation: {args.dataset.capitalize()}")
-    evaluate_pose(model, dataset, output_dir=os.path.join('./predictions', args.dataset))
+    print(f"Starting evaluation: {args.dataset.capitalize()} with {args.combo} IMU configuration")
+    evaluate_pose(model, dataset, output_dir=os.path.join('./predictions', f'{args.dataset}'))

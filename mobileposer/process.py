@@ -512,5 +512,9 @@ if __name__ == "__main__":
     elif args.dataset == "lingo":
         # process_custom(split="train", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)
         process_custom(split="test", dataset_name="lingo", data_root='/home/haoyuyh3/Downloads/lingo_smpl_files', num_splits=1)
+    elif args.dataset == "parahome":
+        process_custom(split="test", dataset_name="parahome", data_root='/home/haoyuyh3/Downloads/parahome_smpl_files', num_splits=1)
+    elif args.dataset == "humoto":
+        process_custom(split="test", dataset_name="humoto", data_root='/home/haoyuyh3/Downloads/humoto_smpl_files', num_splits=1)
     else:
         raise ValueError(f"Dataset {args.dataset} not supported.")
