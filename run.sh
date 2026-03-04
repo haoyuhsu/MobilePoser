@@ -47,14 +47,20 @@
 
 
 
-# ParaHome / global (5-pt)
-python -m mobileposer.evaluate \
-    --model checkpoints/all_MotionGV_no_noise/base_model.pth \
-    --dataset parahome \
-    --combo global
+# # ParaHome / global (5-pt)
+# python -m mobileposer.evaluate \
+#     --model checkpoints/all_MotionGV_no_noise/base_model.pth \
+#     --dataset parahome \
+#     --combo global
 
-# Humoto / global (5-pt)
-python -m mobileposer.evaluate \
-    --model checkpoints/all_MotionGV_no_noise/base_model.pth \
-    --dataset humoto \
-    --combo global
+# # Humoto / global (5-pt)
+# python -m mobileposer.evaluate \
+#     --model checkpoints/all_MotionGV_no_noise/base_model.pth \
+#     --dataset humoto \
+#     --combo global
+
+
+
+python -m mobileposer.train \
+    --dataset "LINGO,humanml" \
+    --body-model smplx

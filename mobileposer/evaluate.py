@@ -10,12 +10,14 @@ from mobileposer.helpers import *
 import mobileposer.articulate as art
 from mobileposer.constants import MODULES
 from mobileposer.utils.model_utils import load_model
-from mobileposer.data import PoseDataset
+from mobileposer.data import PoseDataset, SMPLXPoseDataset
 from mobileposer.models import MobilePoserNet
 
 
 class PoseEvaluator:
     def __init__(self):
+        # NOTE: Always use SMPL model for evaluation metrics (needs calc_mesh).
+        # Metrics are relative (pred vs GT through same FK) so this is consistent.
         self._eval_fn = art.FullMotionEvaluator(paths.smpl_file, joint_mask=torch.tensor([2, 5, 16, 20]), fps=datasets.fps)
 
     def eval(self, pose_p, pose_t, joint_p=None, tran_p=None, tran_t=None):
@@ -165,17 +167,21 @@ if __name__ == '__main__':
     parser.add_argument('--combo', type=str, default='global',
                         choices=list(amass.combos.keys()),
                         help='IMU combo configuration to use for evaluation')
+    parser.add_argument('--body-model', type=str, default='smpl', choices=['smpl', 'smplx'],
+                        help='Body model type: smpl or smplx')
     args = parser.parse_args()
+
+    # set body model type globally before any model is created
+    body_model_config.model_type = args.body_model
 
     # load model 
     model = load_model(args.model)
 
     # load dataset
-    # if args.dataset not in datasets.test_datasets:
-    #     raise ValueError(f"Test dataset: {args.dataset} not found.")
-    # dataset = PoseDataset(fold='test', evaluate=args.dataset)
-
-    dataset = PoseDataset(fold='test', evaluate=args.dataset, combo=args.combo)
+    if body_model_config.model_type == 'smplx':
+        dataset = SMPLXPoseDataset(fold='test', evaluate=args.dataset, combo=args.combo)
+    else:
+        dataset = PoseDataset(fold='test', evaluate=args.dataset, combo=args.combo)
 
     # evaluate pose
     print(f"Starting evaluation: {args.dataset.capitalize()} with {args.combo} IMU configuration")

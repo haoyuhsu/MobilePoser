@@ -25,7 +25,7 @@ class Joints(L.LightningModule):
         self.hypers = finetune_hypers if finetune else train_hypers
 
         # model definitions
-        self.bodymodel = art.model.ParametricModel(paths.smpl_file, device=self.C.device)
+        self.bodymodel = art.model.create_body_model(device=self.C.device)
         self.joints = RNN(self.C.n_imu, 24 * 3, 256) # joint estimation model 
 
         # loss function 

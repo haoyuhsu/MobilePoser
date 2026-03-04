@@ -25,7 +25,7 @@ class Poser(L.LightningModule):
         self.hypers = finetune_hypers if finetune else train_hypers
 
         # body model
-        self.bodymodel = art.model.ParametricModel(paths.smpl_file, device=self.C.device)
+        self.bodymodel = art.model.create_body_model(device=self.C.device)
         self.global_to_local_pose = self.bodymodel.inverse_kinematics_R
 
         # model definitions

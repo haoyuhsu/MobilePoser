@@ -24,7 +24,7 @@ class FootContact(L.LightningModule):
         self.hypers = train_hypers
 
         # model definitions
-        self.bodymodel = art.model.ParametricModel(paths.smpl_file, device=self.C.device)
+        self.bodymodel = art.model.create_body_model(device=self.C.device)
         self.footcontact = RNN(self.C.n_output_joints * 3 + self.C.n_imu, 2, 64)  # foot-ground probability model
 
         # loss function (binary cross-entropy)

@@ -3,7 +3,7 @@ r"""
 """
 
 
-__all__ = ['ParametricModel']
+__all__ = ['ParametricModel', 'SMPLXParametricModel', 'create_body_model']
 
 
 import os
@@ -326,3 +326,122 @@ class ParametricModel:
             tran = tran_list[i].view(-1, 3) - tran_list[i].view(-1, 3)[:1] if tran_list else None
             verts.append(self.forward_kinematics(pose, tran=tran, calc_mesh=True)[2])
         self.view_mesh(verts, fps, colors=colors, distance_between_subjects=distance_between_subjects)
+
+
+class SMPLXParametricModel:
+    r"""
+    SMPL-X parametric model wrapped to provide the same 24-joint interface as ParametricModel.
+    
+    The first 22 SMPL-X body joints map to SMPL joints 0-21.
+    Joints 22-23 (hands) are approximated at wrist positions with identity rotation.
+    """
+
+    def __init__(self, official_model_file: str, use_pose_blendshape=False, device=torch.device('cpu')):
+        with open(official_model_file, 'rb') as f:
+            data = pickle.load(f, encoding='latin1')
+
+        # J_regressor
+        if hasattr(data['J_regressor'], 'todense'):
+            J_regressor = torch.from_numpy(np.array(data['J_regressor'].todense())).float().to(device)
+        else:
+            J_regressor = torch.from_numpy(np.array(data['J_regressor'])).float().to(device)
+
+        self._v_template = torch.from_numpy(data['v_template']).float().to(device)
+        self._J_regressor = J_regressor
+
+        # Compute rest-pose joints: first 22 body joints, pad to 24
+        J_all = J_regressor @ self._v_template  # (55, 3)
+        J_22 = J_all[:22]
+        self._J = torch.cat([J_22, J_22[20:22]], dim=0).to(device)  # (24, 3)
+
+        # Parent hierarchy: first 22 from SMPL-X + hands (children of wrists)
+        kintree = data['kintree_table'][0].astype(np.int32)
+        self.parent = kintree[:22].tolist()
+        self.parent[0] = None
+        self.parent.extend([20, 21])  # joints 22, 23 are children of wrists 20, 21
+
+        # Shape dirs
+        shapedirs = np.array(data['shapedirs'])
+        self._shapedirs = torch.from_numpy(shapedirs).float().to(device)
+
+        # Skinning weights and mesh (for optional calc_mesh)
+        self._skinning_weights = torch.from_numpy(data['weights']).float().to(device)
+        self.face = data['f']
+        self.use_pose_blendshape = use_pose_blendshape
+        self.device = device
+
+    def get_zero_pose_joint_and_vertex(self, shape=None):
+        r"""
+        Get the joint and vertex positions in zero pose. Root joint is aligned at zero.
+        Returns 24 joints (22 body + 2 hand copies from wrists).
+        """
+        if shape is None:
+            j = self._J - self._J[:1]
+            v = self._v_template - self._J[:1]
+        else:
+            shape = shape.view(-1, 10)
+            num_betas = min(shape.shape[1], self._shapedirs.shape[-1])
+            v = torch.tensordot(shape[:, :num_betas], self._shapedirs[:, :, :num_betas],
+                                dims=([1], [2])) + self._v_template
+            j_all = torch.matmul(self._J_regressor, v)  # (B, 55, 3)
+            j_22 = j_all[:, :22]
+            j = torch.cat([j_22, j_22[:, 20:22]], dim=1)  # (B, 24, 3)
+            j, v = j - j[:, :1], v - j[:, :1]
+        return j, v
+
+    def forward_kinematics_R(self, R_local):
+        return M.forward_kinematics_R(R_local, self.parent)
+
+    def inverse_kinematics_R(self, R_global):
+        return M.inverse_kinematics_R(R_global, self.parent)
+
+    def joint_position_to_bone_vector(self, joint_pos):
+        return M.joint_position_to_bone_vector(joint_pos, self.parent)
+
+    def bone_vector_to_joint_position(self, bone_vec):
+        return M.bone_vector_to_joint_position(bone_vec, self.parent)
+
+    def forward_kinematics_T(self, T_local):
+        return M.forward_kinematics_T(T_local, self.parent)
+
+    def forward_kinematics(self, pose, shape=None, tran=None, calc_mesh=False):
+        r"""
+        Forward kinematics compatible with ParametricModel interface.
+        Input pose: (B, 24*3*3) or (B, 24, 3, 3) rotation matrices.
+        Returns: (pose_global, joint_global) or (pose_global, joint_global, vertex_global).
+        """
+        def add_tran(x):
+            return x if tran is None else x + tran.view(-1, 1, 3)
+
+        pose = pose.view(pose.shape[0], -1, 3, 3)
+        j, v = [_.expand(pose.shape[0], -1, -1) for _ in self.get_zero_pose_joint_and_vertex(shape)]
+        T_local = M.transformation_matrix(pose, self.joint_position_to_bone_vector(j))
+        T_global = self.forward_kinematics_T(T_local)
+        pose_global, joint_global = M.decode_transformation_matrix(T_global)
+        if not calc_mesh:
+            return pose_global, add_tran(joint_global)
+
+        raise NotImplementedError(
+            "calc_mesh is not supported for SMPLXParametricModel (55-joint skinning required). "
+            "Use IMU trajectories from imu_traj instead."
+        )
+
+
+def create_body_model(model_type=None, device=torch.device('cpu')):
+    r"""
+    Factory function to create the appropriate body model.
+    
+    :param model_type: 'smpl' or 'smplx'. If None, reads from body_model_config.model_type.
+    :param device: torch device.
+    :return: ParametricModel or SMPLXParametricModel instance.
+    """
+    from mobileposer.config import paths, body_model_config
+    if model_type is None:
+        model_type = body_model_config.model_type
+
+    if model_type == 'smpl':
+        return ParametricModel(str(paths.smpl_file), device=device)
+    elif model_type == 'smplx':
+        return SMPLXParametricModel(str(paths.smplx_file), device=device)
+    else:
+        raise ValueError(f"Unknown body model type: {model_type}. Use 'smpl' or 'smplx'.")

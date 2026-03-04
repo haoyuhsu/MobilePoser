@@ -7,7 +7,7 @@ class train_hypers:
     """Hyperparameters for training."""
     batch_size = 256
     num_workers = 8
-    num_epochs = 20
+    num_epochs = 50
     accelerator = "gpu"
     device = 0
     lr = 1e-3
@@ -28,6 +28,8 @@ class paths:
     root_dir = Path().absolute()
     checkpoint = root_dir / "checkpoints"
     smpl_file = root_dir / "../body_models/human_model_files/smpl/SMPL_MALE.pkl" # "smpl/basicmodel_m.pkl"
+    smplx_file = root_dir / "../body_models/human_model_files/smplx/SMPLX_NEUTRAL.pkl"
+    smplx_data_path = root_dir / "../data/imu-humans/final_data_per_sequence/motion_data"
     weights_file = root_dir / "checkpoints/weights.pth"
     raw_amass = Path("/data/projects/Pose/raw/AMASS")           # TODO: replace with your path
     raw_dip = Path("/home/haoyuyh3/Documents/maxhsu/imu-humans/data/DIP_IMU")           # TODO: replace with your path
@@ -267,3 +269,8 @@ class Devices(Enum):
     Right_Headphone = auto()
     Right_Phone = auto()
     Right_Watch = auto()
+
+
+class body_model_config:
+    """Body model configuration. Set via --body-model argument."""
+    model_type = 'smpl'  # 'smpl' or 'smplx'

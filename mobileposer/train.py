@@ -1,4 +1,6 @@
 import os
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
 import math
 import numpy as np
 import torch
@@ -23,7 +25,7 @@ from mobileposer.utils.file_utils import (
     get_dir_number, 
     get_best_checkpoint
 )
-from mobileposer.config import paths, train_hypers, finetune_hypers
+from mobileposer.config import paths, train_hypers, finetune_hypers, body_model_config
 
 
 # set precision for Tensor cores
@@ -74,14 +76,15 @@ class TrainingManager:
                 )
         return trainer
 
-    def train_module(self, model: L.LightningModule, module_name: str, checkpoint_path: Path):
+    def train_module(self, model: L.LightningModule, module_name: str, checkpoint_path: Path, datamodule: PoseDataModule = None):
         # set the appropriate hyperparameters
         model.hypers = self.hypers 
 
         # create directory for module
         module_path = checkpoint_path / module_name
         make_dir(module_path)
-        datamodule = PoseDataModule(finetune=self.finetune, dataset_source=self.dataset_source)
+        if datamodule is None:
+            datamodule = PoseDataModule(finetune=self.finetune, dataset_source=self.dataset_source)
         trainer = self._setup_trainer(module_path)
 
         print()
@@ -124,7 +127,12 @@ if __name__ == "__main__":
     parser.add_argument("--init-from", nargs="?", default="scratch", type=str)
     parser.add_argument("--dataset", type=str, default="lingo",
                         help="Dataset source to use for training/testing")
+    parser.add_argument("--body-model", type=str, default="smpl", choices=["smpl", "smplx"],
+                        help="Body model type: 'smpl' or 'smplx'")
     args = parser.parse_args()
+
+    # set body model type globally before any model is created
+    body_model_config.model_type = args.body_model
 
     # set seed for reproducible results
     seed_everything(42, workers=True)
@@ -137,6 +145,12 @@ if __name__ == "__main__":
     training_manager = TrainingManager(
         finetune=args.finetune,
         fast_dev_run=args.fast_dev_run,
+        dataset_source=args.dataset
+    )
+
+    # create datamodule once and reuse across modules
+    datamodule = PoseDataModule(
+        finetune=args.finetune,
         dataset_source=args.dataset
     )
 
@@ -153,8 +167,8 @@ if __name__ == "__main__":
             model_path = get_best_checkpoint(model_dir)
             model = module.from_pretrained(model_path=os.path.join(model_dir, model_path)) # load pre-trained model
 
-        training_manager.train_module(model, args.module, checkpoint_path)
+        training_manager.train_module(model, args.module, checkpoint_path, datamodule=datamodule)
     else:
         # train all modules
         for module_name, module in MODULES.items():
-            training_manager.train_module(module(), module_name, checkpoint_path)
+            training_manager.train_module(module(), module_name, checkpoint_path, datamodule=datamodule)

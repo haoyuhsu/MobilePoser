@@ -6,7 +6,7 @@ import numpy as np
 import lightning as L
 from torch.optim.lr_scheduler import StepLR 
 
-from mobileposer.articulate.model import ParametricModel
+from mobileposer.articulate.model import ParametricModel, create_body_model
 from mobileposer.models.rnn import RNN
 from mobileposer.config import *
 
@@ -23,7 +23,7 @@ class Velocity(L.LightningModule):
         # constants
         self.C = model_config
         self.hypers = train_hypers
-        self.bodymodel = ParametricModel(paths.smpl_file, device=self.C.device)
+        self.bodymodel = create_body_model(device=self.C.device)
 
         # model definitions
         self.vel = RNN(self.C.n_output_joints * 3 + self.C.n_imu, 24 * 3, 256, bidirectional=False)  # per-frame velocity of the root joint. 
