@@ -327,8 +327,8 @@ def process_imuposer(split: str="train"):
                 tran = tran.matmul(rot.squeeze())
 
                 # TODO: test whether to transform the IMU data as well (this hurts the pretrained model performance, not sure how it will affect our models)
-                # acc = torch.einsum('ij,nkj->nki', rot.squeeze(), acc)
-                # ori = torch.einsum('ij,nkjl->nkil', rot.squeeze(), ori)
+                acc = torch.einsum('ij,nkj->nki', rot.squeeze(), acc)
+                ori = torch.einsum('ij,nkjl->nkil', rot.squeeze(), ori)
 
                 # ensure sizes are consistent
                 assert tran.shape[0] == pose.shape[0]
