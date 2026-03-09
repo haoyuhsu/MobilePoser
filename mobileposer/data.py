@@ -292,7 +292,8 @@ class SMPLXPoseDataset(Dataset):
         self.fold = fold
         self.evaluate = evaluate
         self.finetune = finetune
-        self.dataset_source = dataset_source
+        # When evaluating, use the evaluate name as the dataset source filter
+        self.dataset_source = evaluate if evaluate else dataset_source
         self.combo = combo
         self.combos = list(amass.combos.items())
         self.num_pred_joints = len(amass.pred_joints_set)
@@ -312,10 +313,10 @@ class SMPLXPoseDataset(Dataset):
 
         # Collect filenames (optionally filter by dataset_source)
         fnames = sorted(f for f in os.listdir(data_dir) if f.endswith('.pkl'))
-        if dataset_source:
-            valid = [s for s in dataset_source.split(',')]
-            fnames = [f for f in fnames if any(v in f for v in valid)]
-        print(f"SMPLXPoseDataset [{fold}]: Found {len(fnames)} .pkl files in {data_dir} for dataset source '{dataset_source}'.")
+        if self.dataset_source:
+            valid = [s for s in self.dataset_source.split(',')]
+            fnames = [f for f in fnames if any(v.lower() in f.lower() for v in valid)]
+        print(f"SMPLXPoseDataset [{fold}]: Found {len(fnames)} .pkl files in {data_dir} for dataset source '{self.dataset_source}'.")
 
         window_length = datasets.window_length if fold == 'train' else None
 

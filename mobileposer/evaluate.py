@@ -21,12 +21,13 @@ class PoseEvaluator:
         self._eval_fn = art.FullMotionEvaluator(paths.smpl_file, joint_mask=torch.tensor([2, 5, 16, 20]), fps=datasets.fps)
 
     def eval(self, pose_p, pose_t, joint_p=None, tran_p=None, tran_t=None):
-        pose_p = pose_p.clone().view(-1, 24, 3, 3)
-        pose_t = pose_t.clone().view(-1, 24, 3, 3)
-        tran_p = tran_p.clone().view(-1, 3)
-        tran_t = tran_t.clone().view(-1, 3)
-        pose_p[:, joint_set.ignored] = torch.eye(3, device=pose_p.device)
-        pose_t[:, joint_set.ignored] = torch.eye(3, device=pose_t.device)
+        # Move everything to CPU to match the evaluator's body model device
+        pose_p = pose_p.clone().cpu().view(-1, 24, 3, 3)
+        pose_t = pose_t.clone().cpu().view(-1, 24, 3, 3)
+        tran_p = tran_p.clone().cpu().view(-1, 3)
+        tran_t = tran_t.clone().cpu().view(-1, 3)
+        pose_p[:, joint_set.ignored] = torch.eye(3)
+        pose_t[:, joint_set.ignored] = torch.eye(3)
 
         errs = self._eval_fn(pose_p, pose_t, tran_p=tran_p, tran_t=tran_t)
         return torch.stack([errs[9], errs[3], errs[9], errs[0]*100, errs[7]*100, errs[1]*100, errs[4] / 100, errs[6]])
@@ -45,7 +46,7 @@ def evaluate_pose(model, dataset, num_past_frame=20, num_future_frame=5, evaluat
     device = model_config.device
 
     # load data - UPDATE to extract fname
-    xs, ys, fnames = zip(*[(imu.to(device), (pose.to(device), tran), fname) for imu, pose, joint, tran, fname in dataset])
+    xs, ys, fnames = zip(*[(imu.to(device), (pose.to(device), tran.to(device)), fname) for imu, pose, joint, tran, fname in dataset])
 
     # setup Pose Evaluator
     evaluator = PoseEvaluator()

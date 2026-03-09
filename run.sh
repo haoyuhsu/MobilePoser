@@ -61,6 +61,26 @@
 
 
 
-python -m mobileposer.train \
-    --dataset "LINGO,humanml" \
+# python -m mobileposer.train \
+#     --dataset "LINGO,humanml" \
+#     --body-model smplx
+
+
+# Quick tuned on velocity loss on LINGO
+# python -m mobileposer.train \
+#     --dataset "LINGO" \
+#     --body-model smplx \
+#     --module velocity
+
+
+python -m mobileposer.evaluate \
+    --model checkpoints/1_LINGO,humanml/base_model.pth \
+    --dataset LINGO \
+    --combo global \
+    --body-model smplx
+
+python -m mobileposer.evaluate \
+    --model checkpoints/1_LINGO,humanml/base_model.pth \
+    --dataset LINGO \
+    --combo lw_rp_h \
     --body-model smplx
